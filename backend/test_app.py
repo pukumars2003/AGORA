@@ -111,7 +111,8 @@ def test_all():
     print(f"    Unique slots assigned: {len(slot_set)}, Auto-reassigned: {len(reassigned)}")
 
     print("\n16. Agora & Murf Config...")
-    from main import get_agora_config
+    from main import get_agora_config, start_agora_agent, StartAgentRequest
+    import asyncio
     acfg = get_agora_config()
     assert acfg["app_id"] == "690d39ee1c084e798abed55b51d264e7"
     assert acfg["has_certificate"] == True
@@ -119,8 +120,15 @@ def test_all():
     assert acfg["supported_voices"]["en"]["voice_id"] == "Rachna"
     print(f"    OK: Agora App ID verified, Murf Falcon 2.1 (Rachna) active")
 
+    print("\n17. Agora Start Agent Endpoint...")
+    from main import start_agora_agent, StartAgentRequest
+    agent_res = start_agora_agent(StartAgentRequest(channel_name="swasthya-sahayak-room", language="en"))
+    assert agent_res["status"] == "success"
+    assert bool(agent_res.get("token")) == True
+    print(f"    OK: Agora agent started, channel={agent_res['channel_name']}, token generated successfully")
+
     print("\n" + "=" * 60)
-    print(">>> ALL 16 TESTS PASSED SUCCESSFULLY WITH 0 BUGS! <<<")
+    print(">>> ALL 17 TESTS PASSED SUCCESSFULLY WITH 0 BUGS! <<<")
     print("=" * 60)
 
 if __name__ == "__main__":

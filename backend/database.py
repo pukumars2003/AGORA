@@ -425,6 +425,16 @@ def book_appointment_record(
         return record
 
 
-def scan_prescription_data(image_url: Optional[str] = None, text_content: Optional[str] = None) -> Dict[str, Any]:
+def scan_prescription_data(
+    image_url: Optional[str] = None,
+    text_content: Optional[str] = None,
+    image_bytes: Optional[bytes] = None,
+    mime_type: str = "image/jpeg",
+) -> Dict[str, Any]:
     from prescription_parser import scan_prescription_data as parse_rx
-    return parse_rx(image_url=image_url, text_content=text_content)
+    return parse_rx(
+        image_url=image_url,
+        text_content=text_content,
+        image_bytes=image_bytes,
+        mime_type=mime_type,
+    )

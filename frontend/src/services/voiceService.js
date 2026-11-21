@@ -20,10 +20,10 @@ export const LANGUAGE_CONFIG = {
     voiceName: 'Murf Falcon 2.1 Mohan (te-IN)'
   },
   en: {
-    code: 'en-IN',
+    code: 'en-US',
     label: 'English',
     voiceId: 'Rachna',
-    voiceName: 'Murf Falcon 2.1 Rachna (en-IN)'
+    voiceName: 'Agora Conversational AI / Murf Falcon 2.1 (Rachna)'
   }
 };
 
@@ -33,28 +33,20 @@ class VoiceManager {
     this.localAudioTrack = null;
     this.speechRecognition = null;
     this.isListening = false;
-    this.isSpeaking = false; // Guard flag to prevent speech-recognition echo loop!
-    this.synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    this.isSpeaking = false;
     this.currentAudio = null;
-    this.voices = [];
-
-    if (this.synth) {
-      this.voices = this.synth.getVoices() || [];
-      if (this.synth.onvoiceschanged !== undefined) {
-        this.synth.onvoiceschanged = () => {
-          this.voices = this.synth.getVoices() || [];
-        };
-      }
-    }
+    this.hasRemoteStream = false;
+    this.isAgoraConnected = false;
+    this.isMuted = false;
+    this.onRemoteAudioChange = null;
   }
 
-  // Initialize Speech Recognition
+  // Initialize Speech Recognition (only active when not using Agora direct RTC stream)
   initSpeechRecognition(langCode, onTranscript, onStateChange) {
     if (typeof window === 'undefined') return null;
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     
     if (!SpeechRec) {
-      console.warn("SpeechRecognition not available in this browser");
       return null;
     }
 
@@ -67,10 +59,10 @@ class VoiceManager {
     }
 
     const recognition = new SpeechRec();
-    recognition.continuous = false; // Use turn-based recognition to avoid infinite continuous mic looping!
+    recognition.continuous = false;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    recognition.lang = langCode || 'hi-IN';
+    recognition.lang = langCode || 'en-US';
 
     recognition.onstart = () => {
       this.isListening = true;
@@ -78,10 +70,7 @@ class VoiceManager {
     };
 
     recognition.onresult = (event) => {
-      // If assistant is speaking or playing audio, completely ignore any mic input to prevent loops!
-      if (this.isSpeaking) {
-        return;
-      }
+      if (this.isSpeaking || this.hasRemoteStream) return;
 
       let interim = '';
       let final = '';
@@ -101,9 +90,6 @@ class VoiceManager {
     };
 
     recognition.onerror = (event) => {
-      if (event.error !== 'no-speech') {
-        console.warn("Speech recognition notice:", event.error);
-      }
       if (event.error === 'not-allowed') {
         this.isListening = false;
         if (onStateChange) onStateChange('IDLE');
@@ -120,148 +106,102 @@ class VoiceManager {
   }
 
   startListening() {
-    if (!this.speechRecognition || this.isSpeaking) {
-      return;
-    }
+    if (!this.speechRecognition || this.isSpeaking) return;
     this.stopSpeaking();
     try {
       this.speechRecognition.start();
-    } catch (e) {
-      // Ignore if already running
-    }
+    } catch (e) {}
   }
 
   stopListening() {
     if (this.speechRecognition) {
-      try {
-        this.speechRecognition.stop();
-      } catch (e) {}
+      try { this.speechRecognition.stop(); } catch (e) {}
       this.isListening = false;
     }
   }
 
-  // Speak through Murf Falcon 2.1 Streaming (or natural high-fidelity fallback)
-  async speak(text, langKey = 'hi', onStart, onEnd) {
-    this.stopSpeaking();
-    this.stopListening(); // Critical: pause speech recognition immediately while speaking!
-    this.isSpeaking = true;
-
+  // Primary speech output:
+  // 1. Agora RTC Agent Stream (Primary)
+  // 2. Murf AI Falcon 2.1 Stream (Secondary fallback via /api/tts/murf-stream)
+  // ZERO Windows SpeechSynthesis! Windows synthesis is completely eliminated.
+  async speak(text, langKey = 'en', onStart, onEnd) {
     if (!text || !text.trim()) {
       this.isSpeaking = false;
       if (onEnd) onEnd();
       return;
     }
 
-    const cleanText = text.replace(/[*_#`~[\]]/g, ' ').replace(/\s+/g, ' ').trim();
-    const langInfo = LANGUAGE_CONFIG[langKey] || LANGUAGE_CONFIG.hi;
-
-    const wrappedOnEnd = () => {
-      // Cooldown buffer of 600ms before allowing mic again so speaker echoes die out
+    // 1. If Agora RTC remote agent audio is active, Agora's voice plays over RTC!
+    if (this.hasRemoteStream) {
+      this.isSpeaking = true;
+      if (onStart) onStart();
       setTimeout(() => {
         this.isSpeaking = false;
-      }, 600);
-      if (onEnd) onEnd();
-    };
-
-    try {
-      const response = await fetch('/api/tts/murf-stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: cleanText,
-          language: langKey,
-          voice_id: langInfo.voiceId
-        })
-      });
-
-      const contentType = response.headers.get('content-type');
-      if (response.ok && contentType && contentType.includes('audio')) {
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        this.currentAudio = audio;
-
-        if (onStart) onStart();
-        audio.onplay = () => { if (onStart) onStart(); };
-        audio.onended = () => {
-          wrappedOnEnd();
-          URL.revokeObjectURL(audioUrl);
-          this.currentAudio = null;
-        };
-        audio.onerror = () => {
-          this.speakFallback(cleanText, langKey, onStart, wrappedOnEnd);
-        };
-        audio.play().catch(() => {
-          this.speakFallback(cleanText, langKey, onStart, wrappedOnEnd);
-        });
-        return;
-      }
-    } catch (e) {
-      console.warn("Murf stream notice, using fallback:", e);
-    }
-
-    this.speakFallback(cleanText, langKey, onStart, wrappedOnEnd);
-  }
-
-  speakFallback(text, langKey, onStart, onEnd) {
-    if (!this.synth) {
-      this.isSpeaking = false;
-      if (onEnd) onEnd();
+        if (onEnd) onEnd();
+      }, 1200);
       return;
     }
 
-    this.synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95;
-    utterance.pitch = 1.0;
+    // 2. Fallback: Murf AI Falcon 2.1 Streaming Audio
+    await this.playMurfAudio(text, langKey, onStart, onEnd);
+  }
 
-    const allVoices = (this.voices && this.voices.length > 0) ? this.voices : this.synth.getVoices();
-    const langInfo = LANGUAGE_CONFIG[langKey] || LANGUAGE_CONFIG.hi;
-    const hasIndicScript = /[\u0900-\u097F\u0C80-\u0CFF\u0C00-\u0C7F]/.test(text);
+  async playMurfAudio(text, langKey = 'en', onStart, onEnd) {
+    try {
+      this.stopSpeaking();
+      const res = await fetch('/api/tts/murf-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: text,
+          language: langKey || 'en'
+        })
+      });
 
-    let chosenVoice = null;
-    
-    if (langKey === 'hi' && hasIndicScript) {
-      chosenVoice = allVoices.find(v => v.lang.startsWith('hi') || v.name.includes('Hindi') || v.name.includes('Kalpana') || v.name.includes('Hemant'));
-    } else if (langKey === 'kn' && hasIndicScript) {
-      chosenVoice = allVoices.find(v => v.lang.startsWith('kn') || v.name.includes('Kannada'));
-    } else if (langKey === 'te' && hasIndicScript) {
-      chosenVoice = allVoices.find(v => v.lang.startsWith('te') || v.name.includes('Telugu'));
-    }
+      if (!res.ok) {
+        if (onEnd) onEnd();
+        return;
+      }
 
-    if (!chosenVoice) {
-      chosenVoice = allVoices.find(v => 
-        v.lang === 'en-IN' || 
-        v.name.includes('India') || 
-        v.name.includes('Heera') || 
-        v.name.includes('Ravi') ||
-        v.name.includes('Neerja') ||
-        v.name.includes('Veena')
-      );
-    }
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('audio')) {
+        // Murf API returned status or key not configured
+        if (onEnd) onEnd();
+        return;
+      }
 
-    if (!chosenVoice) {
-      chosenVoice = allVoices.find(v => v.lang.startsWith('hi') || v.lang.startsWith('en'));
-    }
+      const blob = await res.blob();
+      if (blob.size === 0) {
+        if (onEnd) onEnd();
+        return;
+      }
 
-    if (chosenVoice) {
-      utterance.voice = chosenVoice;
-      utterance.lang = chosenVoice.lang;
-    } else {
-      utterance.lang = langInfo.code;
-    }
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      this.currentAudio = audio;
+      this.isSpeaking = true;
+      if (onStart) onStart();
 
-    utterance.onstart = () => { if (onStart) onStart(); };
-    utterance.onend = () => { 
-      setTimeout(() => { this.isSpeaking = false; }, 600);
-      if (onEnd) onEnd(); 
-    };
-    utterance.onerror = () => { 
+      audio.onended = () => {
+        this.isSpeaking = false;
+        URL.revokeObjectURL(audioUrl);
+        this.currentAudio = null;
+        if (onEnd) onEnd();
+      };
+
+      audio.onerror = () => {
+        this.isSpeaking = false;
+        URL.revokeObjectURL(audioUrl);
+        this.currentAudio = null;
+        if (onEnd) onEnd();
+      };
+
+      await audio.play();
+    } catch (err) {
+      console.warn('Murf audio play error:', err);
       this.isSpeaking = false;
-      if (onEnd) onEnd(); 
-    };
-
-    this.synth.speak(utterance);
+      if (onEnd) onEnd();
+    }
   }
 
   stopSpeaking() {
@@ -273,32 +213,81 @@ class VoiceManager {
       } catch (e) {}
       this.currentAudio = null;
     }
-    if (this.synth) {
-      this.synth.cancel();
-    }
   }
 
-  async joinAgoraChannel(appId, channelName, token, uid = 1234) {
+  // --- Agora RTC Full Integration ---
+  async joinAgoraChannel(appId, channelName, token, uid = 1234, onRemoteAudioChange = null) {
     try {
+      if (this.agoraClient) {
+        await this.leaveAgoraChannel();
+      }
+
+      this.onRemoteAudioChange = onRemoteAudioChange;
       this.agoraClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+
+      // Subscribe to remote audio stream from Agora Conversational AI Agent (MiniMax Radiant Girl)
+      this.agoraClient.on('user-published', async (user, mediaType) => {
+        try {
+          await this.agoraClient.subscribe(user, mediaType);
+          if (mediaType === 'audio') {
+            this.hasRemoteStream = true;
+            if (this.onRemoteAudioChange) this.onRemoteAudioChange(true);
+            user.audioTrack.play();
+          }
+        } catch (subErr) {
+          console.warn('Agora remote audio subscribe error:', subErr);
+        }
+      });
+
+      this.agoraClient.on('user-unpublished', (user, mediaType) => {
+        if (mediaType === 'audio') {
+          this.hasRemoteStream = false;
+          if (this.onRemoteAudioChange) this.onRemoteAudioChange(false);
+        }
+      });
+
       await this.agoraClient.join(appId, channelName, token, uid);
-      this.localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      this.localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+        encoderConfig: 'high_quality_stereo',
+        AEC: true,
+        ANS: true,
+        AGC: true
+      });
+
       await this.agoraClient.publish([this.localAudioTrack]);
+      this.isAgoraConnected = true;
+      this.isMuted = false;
       return { status: 'connected', client: this.agoraClient };
     } catch (err) {
+      console.warn('Agora RTC join error:', err.message);
+      this.isAgoraConnected = false;
       return { status: 'fallback', error: err.message };
     }
   }
 
+  toggleMicrophone() {
+    if (!this.localAudioTrack) return false;
+    this.isMuted = !this.isMuted;
+    this.localAudioTrack.setEnabled(!this.isMuted);
+    return !this.isMuted;
+  }
+
   async leaveAgoraChannel() {
     if (this.localAudioTrack) {
-      try { this.localAudioTrack.close(); } catch (e) {}
+      try { 
+        this.localAudioTrack.stop();
+        this.localAudioTrack.close(); 
+      } catch (e) {}
       this.localAudioTrack = null;
     }
     if (this.agoraClient) {
       try { await this.agoraClient.leave(); } catch (e) {}
       this.agoraClient = null;
     }
+    this.isAgoraConnected = false;
+    this.hasRemoteStream = false;
+    this.isMuted = false;
+    if (this.onRemoteAudioChange) this.onRemoteAudioChange(false);
   }
 }
 

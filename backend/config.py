@@ -13,7 +13,12 @@ class Settings(BaseSettings):
     AGORA_CUSTOMER_SECRET: str = os.getenv("AGORA_CUSTOMER_SECRET", "")
     
     # Agora Conversational AI Agent Studio Pipeline
-    AGORA_PIPELINE_ID: str = os.getenv("AGORA_PIPELINE_ID", "764732387e094ab29c71c37d94d205e7")
+    # User console pipeline: 5702f40d38094584a3118c1b0460d763
+    AGORA_PIPELINE_ID: str = os.getenv("AGORA_PIPELINE_ID", "5702f40d38094584a3118c1b0460d763")
+    AGORA_TTS_VENDOR: str = os.getenv("AGORA_TTS_VENDOR", "minimax")
+    AGORA_TTS_VOICE: str = os.getenv("AGORA_TTS_VOICE", "English_radiant_girl")
+    AGORA_ASR_VENDOR: str = os.getenv("AGORA_ASR_VENDOR", "deepgram")
+    AGORA_ASR_MODEL: str = os.getenv("AGORA_ASR_MODEL", "nova-3")
     
     # Murf AI Falcon 2.1 settings
     # Updated with exact user specification: {"voice_id":"Rachna","style":"Conversational","model":"Falcon 2.1","locale":"en-IN"}

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -149,10 +149,10 @@ class StartAgentRequest(BaseModel):
     channel_name: str
     language: Optional[str] = "en"
     user_uid: Optional[int] = 1234
-    pipeline_id: Optional[str] = "764732387e094ab29c71c37d94d205e7"
+    pipeline_id: Optional[str] = "5702f40d38094584a3118c1b0460d763"
 
 @app.post("/api/agora/start-agent")
-async def start_agora_agent(req: StartAgentRequest):
+def start_agora_agent(req: StartAgentRequest):
     channel = req.channel_name or "swasthya-sahayak-room"
     lang = req.language or "en"
     pipeline_id = req.pipeline_id or settings.AGORA_PIPELINE_ID
@@ -160,15 +160,15 @@ async def start_agora_agent(req: StartAgentRequest):
     user_token = generate_agora_rtc_token(channel, req.user_uid or 1234)
     
     # Trigger Agora Join REST API
-    join_result = await join_agora_conversational_agent(channel, pipeline_id)
+    join_result = join_agora_conversational_agent(channel, pipeline_id)
     
     emit_event("AGORA_AGENT_STARTED", "Agora Conversational AI Agent Initialized", {
         "channel": channel,
         "language": lang,
         "pipeline_id": pipeline_id,
-        "tts_vendor": "Murf AI Falcon 2.1 (Rachna, Conversational)",
-        "voice": config["conversational_ai_pipeline"]["tts"]["voice_id"],
-        "asr_engine": "Agora Multilingual ASR (Code-mixed capable)",
+        "tts_vendor": "MiniMax speech-2.8-turbo (Radiant Girl)",
+        "voice": "English_radiant_girl",
+        "asr_engine": "Deepgram Nova-3 Multilingual ASR",
         "join_status": join_result.get("status")
     })
     return {
@@ -288,8 +288,36 @@ class ScanPrescriptionRequest(BaseModel):
     language: Optional[str] = "hi"
 
 @app.post("/api/prescription/scan")
-def scan_prescription(req: ScanPrescriptionRequest):
-    rx = scan_prescription_data(image_url=req.image_url)
+async def scan_prescription(
+    image: UploadFile = File(None),
+    language: Optional[str] = Form(None),
+):
+    image_bytes = None
+    mime_type = "image/jpeg"
+    image_name = None
+
+    if image is not None:
+        image_name = image.filename
+        mime_type = image.content_type or "application/octet-stream"
+        if not (mime_type.startswith("image/") or mime_type == "application/pdf"):
+            raise HTTPException(status_code=400, detail="Please upload an image or PDF file.")
+        image_bytes = await image.read()
+        if len(image_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="The prescription file is larger than 10 MB.")
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    else:
+        raise HTTPException(status_code=400, detail="Please upload a prescription image.")
+
+    try:
+        rx = scan_prescription_data(
+            image_url=image_name,
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
     emit_event("PRESCRIPTION_SCANNED", "AI Prescription OCR Scanned & Read", {
         "diagnosis": rx["diagnosis"], "medicines_count": len(rx["medicines"]),
         "reminders": [m["name"] + " (" + ", ".join(m["reminder_times"]) + ")" for m in rx["medicines"]]

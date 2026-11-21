@@ -6,6 +6,22 @@
   body {
     @apply bg-slate-50 text-slate-800 font-sans;
   }
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  button,
+  input {
+    max-width: 100%;
+  }
 }
 
 /* Custom modern scrollbars */

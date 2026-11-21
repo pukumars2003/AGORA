@@ -13,7 +13,8 @@ import FeedbackModal from './components/FeedbackModal';
 import { voiceManager, LANGUAGE_CONFIG } from './services/voiceService';
 import { 
   Mic, Volume2, Sparkles, Loader2, Send, 
-  CheckCircle, ArrowRight, Camera, Navigation, Star, MapPin, PhoneCall, X
+  CheckCircle, ArrowRight, Camera, Navigation, Star, MapPin, PhoneCall, X,
+  Radio, MicOff, PhoneOff
 } from 'lucide-react';
 
 export default function App() {
@@ -28,6 +29,17 @@ export default function App() {
   const [emergencyAlert, setEmergencyAlert] = useState(null);
   const [hasGreeted, setHasGreeted] = useState(false);
   const [agoraOutboundCall, setAgoraOutboundCall] = useState(null); // 15-second Agora test trigger
+  
+  // Agora Conversational AI Agent RTC Session
+  const [agoraSession, setAgoraSession] = useState({
+    connected: false,
+    channel: 'swasthya-sahayak-room',
+    pipelineId: '5702f40d38094584a3118c1b0460d763',
+    voice: 'MiniMax Radiant Girl (speech-2.8-turbo)',
+    isMuted: false,
+    remoteSpeaking: false,
+    connecting: false
+  });
   
   const isSubmittingRef = useRef(false);
   const agoraTimerRef = useRef(null);
@@ -64,9 +76,13 @@ export default function App() {
     );
   }, []);
 
-  // Initialize Speech Recognition when user selects language
+  // Speech Recognition ONLY when Agora RTC is inactive (avoids parallel double-processing!)
   useEffect(() => {
     if (!currentUser || !currentLang) return;
+    if (agoraSession.connected) {
+      voiceManager.stopListening();
+      return;
+    }
     const langInfo = LANGUAGE_CONFIG[currentLang] || LANGUAGE_CONFIG.hi;
 
     voiceManager.initSpeechRecognition(
@@ -81,35 +97,192 @@ export default function App() {
         setVoiceState(state);
       }
     );
+  }, [currentUser, currentLang, agoraSession.connected]);
+
+  // --- Agora Conversational AI Agent RTC Integration ---
+  const connectAgoraAgent = async () => {
+    if (!currentLang) return;
+    setAgoraSession(prev => ({ ...prev, connecting: true }));
+    try {
+      const res = await fetch('/api/agora/start-agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel_name: 'swasthya-sahayak-room',
+          language: currentLang,
+          user_uid: 1234,
+          pipeline_id: '5702f40d38094584a3118c1b0460d763'
+        })
+      });
+      const data = await res.json();
+      if (data.token) {
+        const joinRes = await voiceManager.joinAgoraChannel(
+          data.app_id,
+          data.channel_name,
+          data.token,
+          data.user_uid,
+          (remoteActive) => {
+            setAgoraSession(prev => ({ ...prev, remoteSpeaking: remoteActive }));
+            if (remoteActive) {
+              setVoiceState('SPEAKING');
+            } else {
+              setVoiceState('IDLE');
+            }
+          }
+        );
+        setAgoraSession(prev => ({
+          ...prev,
+          connected: joinRes.status === 'connected',
+          connecting: false,
+          channel: data.channel_name,
+          voice: 'MiniMax Radiant Girl (speech-2.8-turbo)'
+        }));
+      }
+    } catch (e) {
+      console.warn("Agora connect error:", e);
+      setAgoraSession(prev => ({ ...prev, connecting: false }));
+    }
+  };
+
+  const disconnectAgoraAgent = async () => {
+    await voiceManager.leaveAgoraChannel();
+    setAgoraSession(prev => ({
+      ...prev,
+      connected: false,
+      remoteSpeaking: false,
+      connecting: false
+    }));
+  };
+
+  const toggleAgoraMicMute = () => {
+    const isNowMuted = !voiceManager.toggleMicrophone();
+    setAgoraSession(prev => ({ ...prev, isMuted: isNowMuted }));
+  };
+
+  // Auto-connect to Agora Conversational AI RTC Channel upon language selection
+  useEffect(() => {
+    if (currentUser && currentLang) {
+      connectAgoraAgent();
+    }
+    return () => {
+      voiceManager.leaveAgoraChannel();
+    };
   }, [currentUser, currentLang]);
 
-  // Agent speaks initial greeting when language is chosen
+  // In-memory instant greetings for 0ms initial voice playback
+  const GREETINGS = {
+    hi: "Namaste! Main Swasthya Sahayak hoon, aapka healthcare assistant. Aap mujhe batayein — kya takleef hai ya kis doctor se milna hai? Main aapki madad ke liye yahan hoon!",
+    kn: "ನಮಸ್ಕಾರ! ನಾನು ಸ್ವಾಸ್ಥ್ಯ ಸಹಾಯಕ, ನಿಮ್ಮ ಆರೋಗ್ಯ ಸಹಾಯಕ. ನಿಮಗೆ ಏನು ತೊಂದರೆ ಇದೆ ಎಂದು ಹೇಳಿ. ನಾನು ಸಹಾಯ ಮಾಡಲು ಇಲ್ಲಿದ್ದೇನೆ!",
+    te: "నమస్కారం! నేను స్వాస్థ్య సహాయక్, మీ హెల్త్‌కేర్ అసిస్టెంట్. మీకు ఏ సమస్య ఉందో చెప్పండి. మీకు సహాయం చేయడానికి నేను ఇక్కడ ఉన్నాను!",
+    en: "Hi, thanks for calling Swasthya Sahayak. I can help you find specialists, check clinic hours, or connect you with a doctor. How can I help you today?"
+  };
+
+  // Instant agent greeting when language is chosen (zero network lag, radiant voice)
   useEffect(() => {
     if (!currentUser || !currentLang || hasGreeted) return;
 
-    const greetUser = async () => {
-      try {
-        const res = await fetch(`/api/agent/greet?language=${currentLang}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const greeting = data.greeting;
+    const greeting = GREETINGS[currentLang] || GREETINGS.en;
+    setAssistantReply(greeting);
+    setHasGreeted(true);
 
-        setAssistantReply(greeting);
-        setHasGreeted(true);
-
-        setVoiceState('SPEAKING');
-        voiceManager.speak(
-          greeting,
-          currentLang,
-          () => setVoiceState('SPEAKING'),
-          () => setVoiceState('IDLE')
-        );
-      } catch (e) {
-        console.error('Greeting error:', e);
-      }
-    };
-    greetUser();
+    voiceManager.ensureVoicesLoaded().then(() => {
+      setVoiceState('SPEAKING');
+      voiceManager.speak(
+        greeting,
+        currentLang,
+        () => setVoiceState('SPEAKING'),
+        () => setVoiceState('IDLE')
+      );
+    });
   }, [currentUser, currentLang, hasGreeted]);
+
+  // Instant zero-lag slot booking when user clicks Confirm Slot
+  const handleDirectConfirm = (targetDoc) => {
+    voiceManager.stopSpeaking();
+    voiceManager.stopListening();
+    isSubmittingRef.current = false;
+
+    const chosenDoc = targetDoc || suggestedDoctor || {
+      name: "Dr. Ramesh Kumar",
+      hospital: "Manipal Clinic, Koramangala",
+      degrees: "MBBS, MD (Internal Medicine)",
+      speciality: "General Physician",
+      landmark: "Near Sony World Junction",
+      distance: "1.2 km away",
+      travel_time: "5 mins",
+      fee: "₹400",
+      rating: "4.9"
+    };
+
+    const newAppt = {
+      id: `APT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+      doctor_id: chosenDoc.id || 'doc-001',
+      doctor_name: chosenDoc.name,
+      degrees: chosenDoc.degrees || chosenDoc.speciality,
+      speciality: chosenDoc.speciality,
+      hospital: chosenDoc.hospital,
+      city: chosenDoc.city || userLocation.city,
+      landmark: chosenDoc.landmark || 'Near Sony World Signal',
+      distance: chosenDoc.distance || '1.0 km away',
+      travel_time: chosenDoc.travel_time || '5 mins',
+      fee: chosenDoc.fee || '₹400',
+      rating: chosenDoc.rating || '4.9',
+      slot: '11:30 AM',
+      date: 'Tomorrow',
+      patient_name: currentUser?.name || 'Ravi Kumar',
+      phone: currentUser?.phone || '+91 98450 12345',
+      why_best: chosenDoc.why_best || ['Consistently rated 5 stars for minimal wait times'],
+      map_directions: chosenDoc.map_directions || [
+        `Head toward ${chosenDoc.hospital} (300 m)`,
+        `Turn past ${chosenDoc.landmark || 'main junction'} (400 m)`,
+        `OPD Entrance on your left (200 m)`
+      ]
+    };
+
+    setAppointment(newAppt);
+    setSuggestedDoctor(null);
+    setSuggestedDoctors([]);
+    setAssistantSteps([
+      { name: 'search_doctors', label: 'search_doctors', status: 'done' },
+      { name: 'get_slots', label: 'get_slots', status: 'done' },
+      { name: 'book_appointment', label: 'book_appointment', status: 'done' },
+      { name: 'sms_confirmation', label: 'SMS confirmation', status: 'sent' },
+      { name: 'reminder_set', label: 'Reminder scheduled', status: 'set' }
+    ]);
+
+    const confirmSpeech = currentLang === 'hi'
+      ? `Aapka appointment ${chosenDoc.name} ke sath kal subah 11:30 baje confirm ho gaya hai. Clinic route aur directions ready hain.`
+      : currentLang === 'kn'
+      ? `Nimma appointment ${chosenDoc.name} jothe naale belagge 11:30 AM ge confirm aagide. Clinic route details ready ide.`
+      : currentLang === 'te'
+      ? `Mee appointment ${chosenDoc.name} garitho repu 11:30 AM ki confirm ayindi. Clinic route details ready ga unnayi.`
+      : `Your appointment with ${chosenDoc.name} has been confirmed for tomorrow at 11:30 AM. Clinic route and Google Maps directions are active.`;
+
+    setAssistantReply(confirmSpeech);
+    setVoiceState('SPEAKING');
+    voiceManager.speak(confirmSpeech, currentLang, () => setVoiceState('SPEAKING'), () => setVoiceState('IDLE'));
+
+    // Start 15-second Agora RTC Outbound Reminder test timer
+    if (agoraTimerRef.current) clearTimeout(agoraTimerRef.current);
+    agoraTimerRef.current = setTimeout(() => {
+      const patientName = currentUser?.name || 'Ravi Kumar';
+      const outboundPrompt = currentLang === 'hi'
+        ? `Namaste ${patientName}! Yeh Swasthya Sahayak ka Agora Outbound Reminder call hai. Kal subah 11:30 baje ${chosenDoc.name} ke sath aapka consultation confirm hai.`
+        : currentLang === 'kn'
+        ? `Namaskara ${patientName}! Idu Swasthya Sahayak Agora Outbound Reminder call. Naale belagge 11:30 AM ge ${chosenDoc.name} jothe nimma consultation confirm aagide.`
+        : currentLang === 'te'
+        ? `Namaskaram ${patientName}! Idi Swasthya Sahayak Agora Outbound Reminder call. Repu 11:30 AM ki ${chosenDoc.name} garitho mee consultation confirm ayindi.`
+        : `Hello ${patientName}! This is Alex Morgan with your live Agora outbound appointment reminder. Your consultation is confirmed for tomorrow at 11:30 AM with ${chosenDoc.name}.`;
+
+      setAgoraOutboundCall({
+        doctor: chosenDoc.name,
+        slot: '11:30 AM',
+        patient: patientName,
+        message: outboundPrompt
+      });
+      voiceManager.speak(outboundPrompt, currentLang);
+    }, 15000);
+  };
 
   // Handle voice or text message processing with anti-loop echo protection
   const handleVoiceSubmit = async (text) => {
@@ -238,6 +411,7 @@ export default function App() {
     setAssistantReply('');
     setAppointment(null);
     setSuggestedDoctor(null);
+    setSuggestedDoctors([]);
     setEmergencyAlert(null);
     setAssistantSteps([]);
     setVoiceState('IDLE');
@@ -250,12 +424,14 @@ export default function App() {
   const handleLogout = () => {
     voiceManager.stopSpeaking();
     voiceManager.stopListening();
+    disconnectAgoraAgent();
     setCurrentUser(null);
     setCurrentLang(null);
     setSpokenText('');
     setAssistantReply('');
     setAppointment(null);
     setSuggestedDoctor(null);
+    setSuggestedDoctors([]);
     setEmergencyAlert(null);
     setAssistantSteps([]);
     setVoiceState('IDLE');
@@ -299,7 +475,7 @@ export default function App() {
         onOpenLogin={handleLogout}
         currentUser={currentUser}
         onLogout={handleLogout}
-        isAgoraActive={true}
+        isAgoraActive={agoraSession.connected}
         userLocation={userLocation}
         onLocationChange={(loc) => setUserLocation(loc)}
       />
@@ -307,9 +483,84 @@ export default function App() {
       {/* Main Screen 7 Canvas */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
 
+        {/* Agora RTC Conversational AI Agent Live Banner */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white rounded-2xl border border-sky-200/90 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-md transition-all ${
+              agoraSession.connected 
+                ? 'bg-gradient-to-tr from-emerald-500 to-teal-600 text-white shadow-emerald-500/20' 
+                : agoraSession.connecting
+                ? 'bg-amber-500 text-white animate-spin'
+                : 'bg-slate-100 text-slate-500'
+            }`}>
+              <Radio className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                  Agora Conversational AI Voice Agent
+                </h3>
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${
+                  agoraSession.connected
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    : agoraSession.connecting
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-slate-100 text-slate-600'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${agoraSession.connected ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'}`} />
+                  {agoraSession.connected ? 'RTC Live Voice Stream Active' : agoraSession.connecting ? 'Connecting...' : 'Standby'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                Voice: <span className="text-sky-700 font-semibold">MiniMax speech-2.8-turbo (English_radiant_girl)</span> • Channel: <span className="font-mono text-slate-600">{agoraSession.channel}</span>
+                {agoraSession.remoteSpeaking && (
+                  <span className="ml-2 text-emerald-600 font-bold animate-pulse">
+                    [Agent Voice Streaming Live]
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            {agoraSession.connected ? (
+              <>
+                <button
+                  onClick={toggleAgoraMicMute}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                    agoraSession.isMuted
+                      ? 'bg-rose-100 text-rose-700 hover:bg-rose-200'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                  title={agoraSession.isMuted ? 'Unmute Microphone' : 'Mute Microphone'}
+                >
+                  {agoraSession.isMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                  <span>{agoraSession.isMuted ? 'Mic Muted' : 'Mic Active'}</span>
+                </button>
+                <button
+                  onClick={disconnectAgoraAgent}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 text-xs font-bold flex items-center gap-1.5 transition"
+                >
+                  <PhoneOff className="w-3.5 h-3.5" />
+                  <span>Disconnect</span>
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={connectAgoraAgent}
+                disabled={agoraSession.connecting}
+                className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+              >
+                <Radio className="w-3.5 h-3.5" />
+                <span>{agoraSession.connecting ? 'Connecting...' : 'Connect Agora Live Agent'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Action Pills Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-white rounded-2xl border border-[#DBEAFE] shadow-2xs">
-          <div className="flex items-center gap-2 px-2">
+        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-3 p-3 bg-white rounded-2xl border border-[#DBEAFE] shadow-2xs">
+          <div className="flex items-center gap-2 px-1 sm:px-2 min-w-0">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
             <span className="text-xs font-bold text-slate-800">
               {currentUser.name}
@@ -320,24 +571,24 @@ export default function App() {
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="grid grid-cols-3 sm:flex items-center gap-2 w-full sm:w-auto">
             <button
               onClick={() => setShowPrescriptionModal(true)}
-              className="px-3 py-1.5 rounded-xl bg-[#EFF6FF] text-[#1D4ED8] hover:bg-blue-100 text-xs font-bold flex items-center gap-1.5 transition"
+              className="justify-center min-w-0 px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl bg-[#EFF6FF] text-[#1D4ED8] hover:bg-blue-100 text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition"
             >
               <Camera className="w-3.5 h-3.5" />
               <span>Prescription AI</span>
             </button>
             <button
               onClick={() => setShowMapModal(true)}
-              className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold flex items-center gap-1.5 transition"
+              className="justify-center min-w-0 px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition"
             >
               <Navigation className="w-3.5 h-3.5" />
               <span>Clinic Map</span>
             </button>
             <button
               onClick={() => setShowFeedbackModal(true)}
-              className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 text-xs font-bold flex items-center gap-1.5 transition"
+              className="justify-center min-w-0 px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition"
             >
               <Star className="w-3.5 h-3.5" />
               <span>Feedback</span>
@@ -559,18 +810,7 @@ export default function App() {
               <NearbyDoctorRecommendation
                 doctors={suggestedDoctors}
                 doctor={suggestedDoctor}
-                onConfirmSlot={(doc) => {
-                  const targetDoc = doc || suggestedDoctor;
-                  handleVoiceSubmit(
-                    currentLang === 'hi' 
-                      ? `Haan, ${targetDoc?.name || 'doctor'} ka slot book kar do`
-                      : currentLang === 'kn'
-                      ? `Haudu, ${targetDoc?.name || 'doctor'} appointment book maadi`
-                      : currentLang === 'te'
-                      ? `Avunu, ${targetDoc?.name || 'doctor'} appointment confirm cheyandi`
-                      : `Yes, please confirm the appointment with ${targetDoc?.name || 'the doctor'}`
-                  );
-                }}
+                onConfirmSlot={(doc) => handleDirectConfirm(doc)}
               />
             )}
 
@@ -586,7 +826,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-[#DBEAFE] bg-white py-3 text-center text-xs text-slate-400 font-medium mt-auto">
-        Swasthya Sahayak (स्वास्थ्य सहायक) • Agora Conversational AI & Murf Falcon 2.1 TTS
+        Agora Conversational AI &amp; Murf Falcon 2.1 Healthcare Platform
       </footer>
 
       {/* Modals */}

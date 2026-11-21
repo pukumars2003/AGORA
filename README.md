@@ -246,3 +246,49 @@ d:\Prj\AGORA\
 ├── start.bat                  # 1-Click Windows batch launcher
 └── README.md                  # Complete documentation & pitch guide
 ```
+
+---
+
+## 🎙️ Comprehensive Architecture: How Agora, Murf AI & AI Models Are Used
+
+Based on the project problem statement — **Voice AI for Bharat: Speak Your Language** — below is the complete technical breakdown of how each core technology is architected and utilized in Swasthya Sahayak:
+
+### 1. Agora Real-Time Voice & Conversational AI Stack
+
+| Component | Technical Role & Implementation | Key Parameters & Resources |
+| :--- | :--- | :--- |
+| **Agora Conversational AI Agent Studio** | Hosts the cloud pipeline that bridges real-time speech-to-text, LLM clinical reasoning, and low-latency voice synthesis in one unified conversational turn. | **Pipeline ID:** `806a4bf46c7f4af69c009b3816dbbf5e`<br>**Project App ID:** `690d39ee1c084e798abed55b51d264e7` |
+| **Agora Full REST Join API** | Dynamically provisions and binds an autonomous voice agent into any active user consultation channel via `POST /api/conversational-ai-agent/v2/projects/{app_id}/join`. | Full REST Payload with Deepgram ASR, GPT-4o-mini, MiniMax TTS, and VAD |
+| **Agora RTC SDK (`agora-rtc-sdk-ng`)** | Client-side real-time media engine handling browser microphone capture, audio track publishing, sub-100ms jitter buffers, and room management. | `createClient({ mode: 'rtc', codec: 'vp8' })`, `createMicrophoneAudioTrack()` |
+| **Agora Speech / Deepgram ASR** | Automatic Speech Recognition tuned for conversational dialogue, recognizing both clean English and Indian code-mixed accents. | **Vendor:** `deepgram`<br>**Model:** `nova-3`<br>**Resource ID:** `2ca6dcf4ded340b6b67f0ccf4972a00d` |
+| **Agora LLM Gateway** | Executes clinical conversational reasoning, store/clinic inquiries, and intent clarification. | **Vendor:** `openai`<br>**Model:** `gpt-4o-mini`<br>**Resource ID:** `24731f4ef93e4d33a85a4c4088633bcb` |
+| **MiniMax Speech-2.8-Turbo TTS** | Ultra-high fidelity voice generation in Agora Studio featuring the energetic, cheerful, and radiant female persona. | **Vendor:** `minimax`<br>**Model:** `speech-2.8-turbo`<br>**Voice ID:** `English_radiant_girl`<br>**Resource ID:** `155b2afcadce4c93a85231c74e2e71d6` |
+| **Agora Outbound Telephony & Campaigns** | Automates scheduled voice calls to patients (simulated after 15s in demo, scheduled 2 hours before OPD slot) to confirm attendance and route. | Dynamic variables: `{{customer_name}}`, `{{appointment_date}}`, `{{appointment_time}}`, `{{address}}` |
+| **Agora RTC Token Builder** | Generates dynamic 24-hour cryptographic security tokens using App ID and App Certificate (`d8ed9190cc...`) for role publisher privileges. | `RtcTokenBuilder.buildTokenWithUid(app_id, app_cert, channel, uid, 1, privilege_ts)` |
+| **Turn Detection & Interruption** | Voice Activity Detection (VAD) enabling live conversational barge-in: the user can interrupt the assistant at any time simply by speaking. | `speech_threshold: 0.6`, `prefix_padding_ms: 800`, `silence_duration_ms: 480`, `mode: start_of_speech` |
+
+---
+
+### 2. Murf AI Falcon 2.1 Multilingual TTS Stack
+
+| Language / Voice | Murf Voice ID & Parameters | Spoken Persona & Bharat Clinical Role |
+| :--- | :--- | :--- |
+| **English (India)** | `{"voice_id": "Rachna", "style": "Conversational", "model": "Falcon 2.1", "locale": "en-IN"}` | Warm, reassuring, neutral Indian English accent for appointment scheduling & prescription instructions |
+| **Hindi / Hinglish** | `{"voice_id": "hi-IN-Kabir", "style": "Conversational", "model": "Falcon 2.1", "locale": "hi-IN"}` | Natural North Indian conversational cadence for symptom triage and triage intake |
+| **Kannada (HinKannada)** | `{"voice_id": "kn-IN-Gagan", "style": "Conversational", "model": "Falcon 2.1", "locale": "kn-IN"}` | Fluent native South Indian dialect for Bengaluru clinics & Banashankari OPD consultations |
+| **Telugu (Telugish)** | `{"voice_id": "te-IN-Mohan", "style": "Conversational", "model": "Falcon 2.1", "locale": "te-IN"}` | Empathetic Hyderabad & Telangana regional clinical guidance |
+| **Murf Streaming Endpoint** | `https://in.api.murf.ai/v1/speech/stream` with `volumeOffset: 15` | Byte-streamed audio chunks rendered directly in browser Audio objects |
+| **Prescription Readout** | Native audio playback per tablet | Spoken dosages: *e.g., "Demo Medicine 1 khane se pehle subah 8:00 AM aur raat ko 8:30 PM lein"* |
+
+---
+
+### 3. Complementary LLMs, Vision & Reinforcement Learning
+
+| Layer | Provider & Technology | Role in Swasthya Sahayak |
+| :--- | :--- | :--- |
+| **Primary Fast Reasoning** | **Groq LPU (`llama-3.3-70b-versatile`)** | Sub-200ms low-latency NLU for real-time conversational clinical triage and emergency detection |
+| **Multimodal Vision OCR** | **OpenRouter (Meta Llama 3.3 / Vision)** | Scans handwritten & printed doctor prescriptions, parsing medicine names, dosages, durations, and follow-up dates |
+| **Safety Guardrail Engine** | **Deterministic RAG & Triage Matrix** | Intercepts critical red flags (chest pain, shortness of breath, severe trauma) to trigger instant 108 Emergency alerts |
+| **Adaptive Model Router (RL)** | **Contextual Multi-Armed Bandit** | Dynamically logs user feedback ratings and latency, assigning adaptive rewards to the fastest and most accurate provider |
+| **Client Audio Engine** | **Dual Stream + Minimax Radiant Profile** | Seamlessly switches between live Agora/Murf audio streams and high-speed local natural voices (`Natural`, `Jenny`, `Heera`) for zero-lag UI responsiveness |
+
