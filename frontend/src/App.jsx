@@ -38,8 +38,10 @@ export default function App() {
     voice: 'MiniMax Radiant Girl (speech-2.8-turbo)',
     isMuted: false,
     remoteSpeaking: false,
-    connecting: false
+    connecting: false,
+    switchedToMurf: false
   });
+  const [countdown, setCountdown] = useState(15);
   
   const isSubmittingRef = useRef(false);
   const agoraTimerRef = useRef(null);
@@ -99,10 +101,44 @@ export default function App() {
     );
   }, [currentUser, currentLang, agoraSession.connected]);
 
-  // --- Agora Conversational AI Agent RTC Integration ---
+  // Helper to switch to Murf AI Falcon 2.1 immediately
+  const switchToMurf = (reason = 'Switched to Murf AI') => {
+    voiceManager.leaveAgoraChannel();
+    setAgoraSession(prev => ({
+      ...prev,
+      connecting: false,
+      connected: false,
+      switchedToMurf: true,
+      voice: 'Murf AI Falcon 2.1 (Conversational Mode)'
+    }));
+  };
+
+  // 15-Second Active Countdown Safeguard for Agora Connection
+  useEffect(() => {
+    let timer = null;
+    if (agoraSession.connecting) {
+      setCountdown(15);
+      timer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            switchToMurf('Agora RTC connection timeout (>15s)');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [agoraSession.connecting]);
+
+  // --- Agora Conversational AI Agent RTC Integration with 15s Murf AI Fallback ---
   const connectAgoraAgent = async () => {
     if (!currentLang) return;
-    setAgoraSession(prev => ({ ...prev, connecting: true }));
+    setAgoraSession(prev => ({ ...prev, connecting: true, switchedToMurf: false }));
+
     try {
       const res = await fetch('/api/agora/start-agent', {
         method: 'POST',
@@ -115,6 +151,7 @@ export default function App() {
         })
       });
       const data = await res.json();
+
       if (data.token) {
         const joinRes = await voiceManager.joinAgoraChannel(
           data.app_id,
@@ -130,17 +167,24 @@ export default function App() {
             }
           }
         );
-        setAgoraSession(prev => ({
-          ...prev,
-          connected: joinRes.status === 'connected',
-          connecting: false,
-          channel: data.channel_name,
-          voice: 'MiniMax Radiant Girl (speech-2.8-turbo)'
-        }));
+
+        if (joinRes.status === 'connected') {
+          setAgoraSession(prev => ({
+            ...prev,
+            connected: true,
+            connecting: false,
+            switchedToMurf: false,
+            channel: data.channel_name,
+            voice: 'MiniMax Radiant Girl (speech-2.8-turbo)'
+          }));
+        } else {
+          // If Agora RTC failed, immediately switch to Murf AI
+          switchToMurf('Agora RTC join error');
+        }
       }
     } catch (e) {
       console.warn("Agora connect error:", e);
-      setAgoraSession(prev => ({ ...prev, connecting: false }));
+      switchToMurf('Agora API error');
     }
   };
 
@@ -185,15 +229,13 @@ export default function App() {
     setAssistantReply(greeting);
     setHasGreeted(true);
 
-    voiceManager.ensureVoicesLoaded().then(() => {
-      setVoiceState('SPEAKING');
-      voiceManager.speak(
-        greeting,
-        currentLang,
-        () => setVoiceState('SPEAKING'),
-        () => setVoiceState('IDLE')
-      );
-    });
+    setVoiceState('SPEAKING');
+    voiceManager.speak(
+      greeting,
+      currentLang,
+      () => setVoiceState('SPEAKING'),
+      () => setVoiceState('IDLE')
+    );
   }, [currentUser, currentLang, hasGreeted]);
 
   // Instant zero-lag slot booking when user clicks Confirm Slot
@@ -453,6 +495,87 @@ export default function App() {
     return <LanguageSelectScreen onSelectLanguage={(lang) => setCurrentLang(lang)} />;
   }
 
+  // STEP 2.5: AGORA CONVERSATIONAL AI AGENT STARTING LOADING SCREEN
+  if (agoraSession.connecting) {
+    return (
+      <div className="min-h-screen bg-[#F5F9FF] flex flex-col items-center justify-center p-6 text-[#0B1B3A] font-sans">
+        <div className="max-w-md w-full bg-white rounded-3xl border border-[#DBEAFE] shadow-xl p-8 flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-300">
+          
+          {/* Animated Glowing RTC Orb */}
+          <div className="relative my-6 flex items-center justify-center">
+            <div className="absolute w-32 h-32 rounded-full border-2 border-sky-400 opacity-40 animate-ping" />
+            <div className="absolute w-40 h-40 rounded-full border border-blue-200 opacity-30 animate-pulse" />
+            <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/30 text-white">
+              <Radio className="w-10 h-10 animate-pulse" />
+            </div>
+          </div>
+
+          <span className="text-[11px] font-bold uppercase tracking-wider text-sky-600 bg-sky-50 px-3 py-1 rounded-full border border-sky-200 mb-3">
+            Agora Conversational AI
+          </span>
+
+          <h2 className="text-xl font-extrabold text-slate-900 mb-1">
+            Connecting Voice Agent...
+          </h2>
+          <p className="text-xs text-slate-500 max-w-xs mb-5">
+            Auto-switching to Murf AI Falcon 2.1 in <span className="font-mono font-bold text-sky-600 text-sm">{countdown}s</span> if Agora takes longer than 15s.
+          </p>
+
+          {/* 15-second progress countdown bar */}
+          <div className="w-full bg-slate-100 rounded-full h-2 mb-6 overflow-hidden">
+            <div 
+              className="bg-sky-500 h-2 rounded-full transition-all duration-1000 ease-linear"
+              style={{ width: `${((15 - countdown) / 15) * 100}%` }}
+            />
+          </div>
+
+          {/* Progress / Step Indicators */}
+          <div className="w-full space-y-2.5 text-xs text-left mb-6">
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                <span className="font-semibold text-slate-700">RTC Token Generated</span>
+              </div>
+              <span className="text-[10px] text-emerald-600 font-bold">Done</span>
+            </div>
+
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-sky-50 border border-sky-100">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 text-sky-600 animate-spin" />
+                <span className="font-semibold text-sky-800">Connecting RTC Channel</span>
+              </div>
+              <span className="text-[10px] text-sky-600 font-bold font-mono">{countdown}s remaining</span>
+            </div>
+
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-purple-50 border border-purple-100">
+              <div className="flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-purple-600" />
+                <span className="font-semibold text-purple-900">Murf AI Falcon 2.1 Voice</span>
+              </div>
+              <span className="text-[10px] text-purple-700 font-bold">Auto-ready</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+            <button
+              onClick={() => switchToMurf('User chose Murf AI Voice')}
+              className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm shadow-purple-600/30"
+            >
+              <Volume2 className="w-4 h-4" />
+              <span>Use Murf AI Voice Now</span>
+            </button>
+            <button
+              onClick={() => setAgoraSession(prev => ({ ...prev, connecting: false }))}
+              className="text-xs text-slate-400 hover:text-slate-600 font-semibold transition py-1"
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // STEP 3: CLEAN VOICE ASSISTANT & PATIENT DASHBOARD (Screens 7 & 8)
   const isListening = voiceState === 'LISTENING';
   const isSpeaking = voiceState === 'SPEAKING';
@@ -483,80 +606,111 @@ export default function App() {
       {/* Main Screen 7 Canvas */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
 
-        {/* Agora RTC Conversational AI Agent Live Banner */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white rounded-2xl border border-sky-200/90 shadow-2xs">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-md transition-all ${
-              agoraSession.connected 
-                ? 'bg-gradient-to-tr from-emerald-500 to-teal-600 text-white shadow-emerald-500/20' 
-                : agoraSession.connecting
-                ? 'bg-amber-500 text-white animate-spin'
-                : 'bg-slate-100 text-slate-500'
-            }`}>
-              <Radio className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
-                  Agora Conversational AI Voice Agent
-                </h3>
-                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${
-                  agoraSession.connected
-                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                    : agoraSession.connecting
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'bg-slate-100 text-slate-600'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${agoraSession.connected ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'}`} />
-                  {agoraSession.connected ? 'RTC Live Voice Stream Active' : agoraSession.connecting ? 'Connecting...' : 'Standby'}
-                </span>
+        {/* Agora RTC / Murf AI Active Voice Engine Banner */}
+        {agoraSession.switchedToMurf ? (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white rounded-2xl border border-purple-200 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center shrink-0 shadow-md shadow-purple-500/20 text-white">
+                <Volume2 className="w-5 h-5" />
               </div>
-              <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                Voice: <span className="text-sky-700 font-semibold">MiniMax speech-2.8-turbo (English_radiant_girl)</span> • Channel: <span className="font-mono text-slate-600">{agoraSession.channel}</span>
-                {agoraSession.remoteSpeaking && (
-                  <span className="ml-2 text-emerald-600 font-bold animate-pulse">
-                    [Agent Voice Streaming Live]
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                    Murf AI Falcon 2.1 Voice Engine
+                  </h3>
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                    Active (Switched from Agora &gt;15s)
                   </span>
-                )}
-              </p>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                  Voice Profile: <span className="text-purple-700 font-semibold">{langInfo.voiceName}</span> • High-fidelity conversational stream
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={connectAgoraAgent}
+              className="px-3.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-bold flex items-center gap-1.5 transition"
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>Retry Agora Connect</span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white rounded-2xl border border-sky-200/90 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-md transition-all ${
+                agoraSession.connected 
+                  ? 'bg-gradient-to-tr from-emerald-500 to-teal-600 text-white shadow-emerald-500/20' 
+                  : agoraSession.connecting
+                  ? 'bg-amber-500 text-white animate-spin'
+                  : 'bg-slate-100 text-slate-500'
+              }`}>
+                <Radio className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                    Agora Conversational AI Voice Agent
+                  </h3>
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${
+                    agoraSession.connected
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : agoraSession.connecting
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${agoraSession.connected ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'}`} />
+                    {agoraSession.connected ? 'RTC Live Voice Stream Active' : agoraSession.connecting ? 'Connecting...' : 'Standby'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                  Voice: <span className="text-sky-700 font-semibold">MiniMax speech-2.8-turbo (English_radiant_girl)</span> • Channel: <span className="font-mono text-slate-600">{agoraSession.channel}</span>
+                  {agoraSession.remoteSpeaking && (
+                    <span className="ml-2 text-emerald-600 font-bold animate-pulse">
+                      [Agent Voice Streaming Live]
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              {agoraSession.connected ? (
+                <>
+                  <button
+                    onClick={toggleAgoraMicMute}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                      agoraSession.isMuted
+                        ? 'bg-rose-100 text-rose-700 hover:bg-rose-200'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                    title={agoraSession.isMuted ? 'Unmute Microphone' : 'Mute Microphone'}
+                  >
+                    {agoraSession.isMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    <span>{agoraSession.isMuted ? 'Mic Muted' : 'Mic Active'}</span>
+                  </button>
+                  <button
+                    onClick={disconnectAgoraAgent}
+                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 text-xs font-bold flex items-center gap-1.5 transition"
+                  >
+                    <PhoneOff className="w-3.5 h-3.5" />
+                    <span>Disconnect</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={connectAgoraAgent}
+                  disabled={agoraSession.connecting}
+                  className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+                >
+                  <Radio className="w-3.5 h-3.5" />
+                  <span>{agoraSession.connecting ? 'Connecting...' : 'Connect Agora Live Agent'}</span>
+                </button>
+              )}
             </div>
           </div>
-
-          <div className="flex items-center gap-2 self-end sm:self-auto">
-            {agoraSession.connected ? (
-              <>
-                <button
-                  onClick={toggleAgoraMicMute}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
-                    agoraSession.isMuted
-                      ? 'bg-rose-100 text-rose-700 hover:bg-rose-200'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                  title={agoraSession.isMuted ? 'Unmute Microphone' : 'Mute Microphone'}
-                >
-                  {agoraSession.isMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                  <span>{agoraSession.isMuted ? 'Mic Muted' : 'Mic Active'}</span>
-                </button>
-                <button
-                  onClick={disconnectAgoraAgent}
-                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 text-xs font-bold flex items-center gap-1.5 transition"
-                >
-                  <PhoneOff className="w-3.5 h-3.5" />
-                  <span>Disconnect</span>
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={connectAgoraAgent}
-                disabled={agoraSession.connecting}
-                className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
-              >
-                <Radio className="w-3.5 h-3.5" />
-                <span>{agoraSession.connecting ? 'Connecting...' : 'Connect Agora Live Agent'}</span>
-              </button>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Action Pills Bar */}
         <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-3 p-3 bg-white rounded-2xl border border-[#DBEAFE] shadow-2xs">
