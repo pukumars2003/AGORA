@@ -426,7 +426,5 @@ def book_appointment_record(
 
 
 def scan_prescription_data(image_url: Optional[str] = None, text_content: Optional[str] = None) -> Dict[str, Any]:
-    rx = PRESCRIPTIONS[0].copy()
-    rx["scan_timestamp"] = datetime.now().isoformat()
-    rx["status"] = "ACTIVE_REMINDERS_SCHEDULED"
-    return rx
+    from prescription_parser import scan_prescription_data as parse_rx
+    return parse_rx(image_url=image_url, text_content=text_content)

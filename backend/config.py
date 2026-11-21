@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     PUBLIC_BACKEND_URL: str = os.getenv("PUBLIC_BACKEND_URL", "http://localhost:8000")
 
     class Config:
-        env_file = ".env"
+        env_file = [".env", "../.env"]
         extra = "allow"
 
 settings = Settings()

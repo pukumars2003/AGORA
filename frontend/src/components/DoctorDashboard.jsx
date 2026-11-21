@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Stethoscope, Users, CheckCircle2, Clock, Calendar, 
-  FileText, Pill, LogOut, Star, Plus, ShieldCheck, ChevronRight 
+  FileText, Pill, LogOut, Star, Plus, ShieldCheck, ChevronRight, X 
 } from 'lucide-react';
 
 export default function DoctorDashboard({ currentUser, onLogout }) {
@@ -62,7 +62,7 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
         setTimeout(() => {
           setPrescribeSuccess(false);
           setShowPrescribeModal(false);
-        }, 2000);
+        }, 1500);
       }
     } catch (err) {
       console.error("Prescribe error:", err);
@@ -76,7 +76,7 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
               <Stethoscope className="w-5 h-5" />
             </div>
             <div>
@@ -97,7 +97,7 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowPrescribeModal(true)}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Write Digital Prescription</span>
@@ -119,8 +119,8 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
         
         {/* Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
-            <div className="p-3 rounded-2xl bg-sky-100 text-brand-600">
+          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs flex items-center gap-4">
+            <div className="p-3 rounded-2xl bg-sky-100 text-blue-600">
               <Users className="w-6 h-6" />
             </div>
             <div>
@@ -129,7 +129,7 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
             </div>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
+          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs flex items-center gap-4">
             <div className="p-3 rounded-2xl bg-emerald-100 text-emerald-700">
               <CheckCircle2 className="w-6 h-6" />
             </div>
@@ -139,13 +139,13 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
             </div>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
+          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs flex items-center gap-4">
             <div className="p-3 rounded-2xl bg-amber-100 text-amber-700">
               <Star className="w-6 h-6 fill-amber-500" />
             </div>
             <div>
               <span className="text-xs text-slate-400 font-bold uppercase">Patient Satisfaction</span>
-              <p className="text-2xl font-extrabold text-slate-900 mt-0.5">4.9 ★ (842 reviews)</p>
+              <p className="text-2xl font-extrabold text-slate-900 mt-0.5">4.9 (842 reviews)</p>
             </div>
           </div>
         </div>
@@ -159,7 +159,7 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
             </div>
             <button
               onClick={loadQueue}
-              className="text-xs font-bold text-brand-600 hover:text-brand-700"
+              className="text-xs font-bold text-blue-600 hover:text-blue-700"
             >
               Refresh Queue
             </button>
@@ -175,10 +175,10 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
                   <div>
                     <h4 className="font-bold text-slate-900 text-sm">{pt.patient_name || pt.patient}</h4>
                     <p className="text-slate-500 font-medium">
-                      Slot: <strong className="text-brand-700">{pt.slot}</strong> • Phone: {pt.phone}
+                      Slot: <strong className="text-blue-700">{pt.slot}</strong> • Phone: {pt.phone}
                     </p>
                     <p className="text-slate-600 mt-0.5">
-                      Reported Symptom: <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.2 rounded">{pt.reason || 'Consultation'}</span>
+                      Reported Symptom: <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">{pt.reason || 'Consultation'}</span>
                     </p>
                   </div>
                 </div>
@@ -189,7 +189,7 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
                       setSelectedPatient(pt.patient_name || pt.patient);
                       setShowPrescribeModal(true);
                     }}
-                    className="px-3 py-1.5 bg-brand-50 hover:bg-brand-100 border border-brand-200 text-brand-700 font-bold rounded-xl flex items-center gap-1 transition"
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold rounded-xl flex items-center gap-1 transition"
                   >
                     <FileText className="w-3.5 h-3.5" />
                     <span>Prescribe Tablets</span>
@@ -208,13 +208,13 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
 
       {/* Digital Prescription Modal */}
       {showPrescribeModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="font-extrabold text-base text-slate-900">
                 Digital Prescription Pad
               </h3>
-              <button onClick={() => setShowPrescribeModal(false)} className="text-slate-400 hover:text-slate-700">
+              <button onClick={() => setShowPrescribeModal(false)} className="text-slate-400 hover:text-slate-700 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -226,7 +226,7 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
                   type="text"
                   value={selectedPatient}
                   onChange={(e) => setSelectedPatient(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-semibold"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-semibold focus:outline-none focus:border-blue-500"
                 />
               </div>
 
@@ -236,16 +236,15 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
                   type="text"
                   value={diagnosisText}
                   onChange={(e) => setDiagnosisText(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
-              {/* Sample medicines included */}
-              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-2">
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-2">
                 <span className="font-bold text-emerald-900 block">Prescribed Medication (Auto-syncs alarms):</span>
                 <div className="text-[11px] text-emerald-800 space-y-1">
-                  <p>💊 <strong>Paracetamol 650mg:</strong> 1 tab twice daily after meals (08:30 AM, 09:00 PM)</p>
-                  <p>💊 <strong>Naproxen 250mg:</strong> 1 tab daily with food (01:30 PM)</p>
+                  <p><strong>Paracetamol 650mg:</strong> 1 tab twice daily after meals (08:30 AM, 09:00 PM)</p>
+                  <p><strong>Naproxen 250mg:</strong> 1 tab daily with food (01:30 PM)</p>
                 </div>
               </div>
 
@@ -257,7 +256,7 @@ export default function DoctorDashboard({ currentUser, onLogout }) {
 
               <button
                 type="submit"
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition shadow-xs"
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold rounded-xl transition shadow-xs text-xs"
               >
                 Issue Digital Prescription & Schedule Alarms
               </button>

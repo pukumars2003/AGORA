@@ -95,7 +95,7 @@ def execute_tool_call(tool_name: str, arguments: Dict[str, Any], current_lang: s
             doctor_id=arguments.get("doctor_id", "doc-001"),
             slot=arguments.get("slot", "11:30 AM"),
             patient_name=arguments.get("patient_name", "Ravi Kumar"),
-            phone=arguments.get("phone", "+91 98765 43210"),
+            phone=arguments.get("phone", "+91 98450 12345"),
             reason=arguments.get("reason", "Consultation"),
             language=current_lang
         )
@@ -112,24 +112,23 @@ def execute_tool_call(tool_name: str, arguments: Dict[str, Any], current_lang: s
 class MultilingualAgentEngine:
     """
     Intelligent Agent Engine that supports Indian languages:
-    Hindi, Hinglish, Kannada, Telugu, and Indian English.
-    Handles RAG symptom triage, tool calls, and natural spoken responses.
-    Greets user on first interaction and then assists.
+    Hindi / Hinglish, Kannada / HinKannada, Telugu / Telugish, and Indian English.
+    Natural spoken conversational responses with zero emojis and proper phonetics.
     """
 
     def _core_clinical_reasoning(self, messages: List[Dict[str, str]], current_lang: str = "hi",
                                  patient_lat: float = None, patient_lng: float = None) -> Dict[str, Any]:
         user_messages = [m["content"] for m in messages if m.get("role") == "user"]
         last_user_text = user_messages[-1] if user_messages else ""
-        conversation_history_text = " ".join(user_messages).lower()
+        conversation_history_text = " ".join([m.get("content", "") for m in messages]).lower()
 
-        # ─── GREETING: If no user messages or first message is a greeting ───
+        # ─── GREETING: If no user messages or greeting ───
         if not user_messages or not last_user_text.strip():
             greetings = {
-                "hi": "Namaste! Main Swasthya Sahayak hoon, aapka healthcare assistant. Aap mujhe Hindi ya Hinglish mein bata sakte hain — aapko kya takleef hai ya kis doctor se milna hai? Main aapki madad ke liye yahan hoon!",
-                "kn": "ನಮಸ್ಕಾರ! ನಾನು ಸ್ವಾಸ್ಥ್ಯ ಸಹಾಯಕ, ನಿಮ್ಮ ಆರೋಗ್ಯ ಸಹಾಯಕ. ನಿಮಗೆ ಏನು ತೊಂದರೆ ಇದೆ ಅಥವಾ ಯಾವ ವೈದ್ಯರನ್ನು ಭೇಟಿ ಮಾಡಬೇಕು ಎಂದು ಹೇಳಿ. ನಾನು ಸಹಾಯ ಮಾಡಲು ಇಲ್ಲಿದ್ದೇನೆ!",
-                "te": "నమస్కారం! నేను స్వాస్థ్య సహాయక్, మీ హెల్త్‌కేర్ అసిస్టెంట్. మీకు ఏ సమస్య ఉంది లేదా ఏ డాక్టర్‌ను కలవాలో చెప్పండి. మీకు సహాయం చేయడానికి నేను ఇక్కడ ఉన్నాను!",
-                "en": "Namaste! I'm Swasthya Sahayak, your healthcare assistant. How can I help you today? You can tell me your symptoms or which doctor you'd like to visit, and I'll find the best options near you!"
+                "hi": "Namaste! Main Swasthya Sahayak hoon, aapka healthcare assistant. Aapko kya takleef hai ya kis doctor se milna hai? Main aapki madad ke liye yahan hoon.",
+                "kn": "Namaskara! Naanu nimma Swasthya Sahayak. Nimage yaava doctor consult maadbheku athava enu health problem ide? Naanu help maadthene.",
+                "te": "Namaskaram! Nenu mee Swasthya Sahayak healthcare assistant ni. Meeku em problem undi leda ye doctor ni kalavali? Nenu help chesthanu.",
+                "en": "Hello, I am Swasthya Sahayak, your healthcare assistant. How can I help you today? Please tell me your symptoms or the specialist you would like to consult."
             }
             emit_event(
                 event_type="AGENT_GREETING",
@@ -143,21 +142,14 @@ class MultilingualAgentEngine:
                 "emergency": False
             }
 
-        # Check if user is just greeting back
-        greeting_words = ["hello", "hi", "hey", "namaste", "namaskar", "hola", "good morning", "good evening",
-                          "help", "madad", "sahayata", "kya kar sakte ho"]
-        if last_user_text.strip().lower() in greeting_words or (len(last_user_text.split()) <= 3 and any(g in last_user_text.lower() for g in greeting_words)):
+        greeting_words = ["hello", "hi", "hey", "namaste", "namaskar", "good morning", "good evening", "help"]
+        if last_user_text.strip().lower() in greeting_words:
             greetings = {
-                "hi": "Namaste! Main aapka Swasthya Sahayak hoon. Aap mujhe batayein — kya takleef hai, kahan dard ho raha hai, ya kisi doctor se milna hai? Main turant aapke paas ke best doctor dhundh kar appointment book kar sakta hoon!",
-                "kn": "ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ ಸ್ವಾಸ್ಥ್ಯ ಸಹಾಯಕ. ನಿಮಗೆ ಏನು ತೊಂದರೆ ಇದೆ ಎಂದು ಹೇಳಿ — ನಾನು ಹತ್ತಿರದ ಉತ್ತಮ ವೈದ್ಯರನ್ನು ಹುಡುಕಿ ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ಬುಕ್ ಮಾಡುತ್ತೇನೆ!",
-                "te": "నమస్కారం! నేను మీ స్వాస్థ్య సహాయక్. మీకు ఏ సమస్య ఉందో చెప్పండి — నేను దగ్గరలోని మంచి డాక్టర్‌ను కనుగొని అపాయింట్‌మెంట్ బుక్ చేస్తాను!",
-                "en": "Hello! I'm your Swasthya Sahayak. Tell me — what's troubling you, where does it hurt, or which specialist do you need? I'll find the best nearby doctor and book your appointment instantly!"
+                "hi": "Namaste! Aap batayein kya takleef hai, sar dard, bukhar ya koi aur samasya? Main turant paas ke best doctors suggest kar doonga.",
+                "kn": "Namaskara! Nimage tale novu, jwara athava enu problem ide heli. Naanu nearby best doctors na suggest maadthene.",
+                "te": "Namaskaram! Meeku thalanoppi, jwaram leda em problem undo cheppandi. Nenu daggara unna best doctors ni suggest chesthanu.",
+                "en": "Hello! Please tell me what health issue you are experiencing, and I will recommend the best available doctors near you."
             }
-            emit_event(
-                event_type="AGENT_GREETING",
-                title="Swasthya Sahayak Responded to Greeting",
-                details={"language": current_lang, "type": "greeting_response"}
-            )
             return {
                 "spoken_text": greetings.get(current_lang, greetings["en"]),
                 "tool_calls": [],
@@ -189,8 +181,8 @@ class MultilingualAgentEngine:
                 "emergency": True
             }
 
-        # 2. Extract context: city, speciality, booking confirmation
-        detected_city = "Bengaluru"  # default
+        # 2. Extract city context
+        detected_city = "Bengaluru"
         if "hyderabad" in conversation_history_text:
             detected_city = "Hyderabad"
         elif "delhi" in conversation_history_text:
@@ -198,14 +190,16 @@ class MultilingualAgentEngine:
         elif "mumbai" in conversation_history_text:
             detected_city = "Mumbai"
 
-        # Check if user says "haan", "yes", "book kardo", etc -> Confirm booking!
+        # 3. Detect booking confirmation intent
+        # Supports Hinglish, Kannada/HinKannada ("haudu", "book maadi", "maadi", "sari"), Telugu, English
         wants_to_confirm = any(kw in last_user_text.lower() for kw in [
-            "haan", "yes", "confirm", "book", "ha", "theek", "hawn", "okay", "sari", "haudu", "avunu", "chesi"
+            "haan", "yes", "confirm", "book", "ha", "theek", "hawn", "okay", "sari", 
+            "haudu", "avunu", "chesi", "maadi", "book maadi", "book kardo", "slot book", "kar do"
         ])
 
-        # Step 3: Agentic Flow State
-        if wants_to_confirm and ("11" in conversation_history_text or "slot" in conversation_history_text or "doctor" in conversation_history_text):
-            docs = search_doctors(detected_speciality, detected_city, current_lang)
+        # Step 3A: USER CONFIRMS BOOKING
+        if wants_to_confirm:
+            docs = search_doctors(detected_speciality, detected_city, current_lang, patient_lat=patient_lat, patient_lng=patient_lng)
             chosen_doc = docs[0] if docs else DOCTORS[0]
             slot = "11:30 AM"
 
@@ -220,10 +214,10 @@ class MultilingualAgentEngine:
             appt = booking_res.get("appointment", {})
 
             spoken_confirmations = {
-                "hi": f"Aapka appointment {chosen_doc['name']} ke sath kal subah 11:30 baje book ho gaya hai. SMS confirmation aur reminder bhej diya gaya hai.",
-                "kn": f"{chosen_doc['name']} ಅವರೊಂದಿಗೆ ನಿಮ್ಮ ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ನಾಳೆ ಬೆಳಗ್ಗೆ 11:30 ಕ್ಕೆ ಕಾಯ್ದಿರಿಸಲಾಗಿದೆ. ಎಸ್‌ಎಂಎಸ್ ಕಳುಹಿಸಲಾಗಿದೆ.",
-                "te": f"{chosen_doc['name']} గారితో మీ అపాయింట్‌మెంట్ రేపు ఉదయం 11:30 గంటలకు ఖరారైంది. వివరాలు మెసేజ్ ద్వారా పంపబడ్డాయి.",
-                "en": f"Your appointment with {chosen_doc['name']} has been confirmed for tomorrow at 11:30 AM. Confirmation SMS and reminders have been queued."
+                "hi": f"Aapka appointment {chosen_doc['name']} ke sath kal subah 11:30 baje confirm ho gaya hai. SMS confirmation aur clinic route bhej diya gaya hai.",
+                "kn": f"Nimma appointment {chosen_doc['name']} jothe naale belagge 11:30 AM ge confirm aagide. SMS confirmation mathu clinic route details send maadlaagide.",
+                "te": f"Mee appointment {chosen_doc['name']} garitho repu podduna 11:30 AM ki confirm ayindi. SMS confirmation and clinic route details pampam.",
+                "en": f"Your appointment with {chosen_doc['name']} has been confirmed for tomorrow at 11:30 AM. SMS confirmation and clinic directions have been dispatched."
             }
 
             return {
@@ -234,27 +228,50 @@ class MultilingualAgentEngine:
                 "appointment": appt
             }
 
-        # Otherwise, user is stating symptom or asking for doctor
-        docs = search_doctors(speciality=detected_speciality, city=detected_city, language=current_lang, disease_query=last_user_text)
-        chosen_doc = docs[0] if docs else DOCTORS[0]
+        # Step 3B: USER ASKS FOR DOCTORS / SYMPTOMS -> RETURN MULTIPLE SUGGESTIONS (TOP 3)
+        docs = search_doctors(
+            speciality=detected_speciality,
+            city=detected_city,
+            language=current_lang,
+            disease_query=last_user_text,
+            patient_lat=patient_lat,
+            patient_lng=patient_lng
+        )
+        
+        if not docs:
+            docs = DOCTORS[:3]
+        top_docs = docs[:3]
+        chosen_doc = top_docs[0]
+        second_doc = top_docs[1] if len(top_docs) > 1 else None
+
         execute_tool_call("search_doctors", {
             "speciality": detected_speciality,
             "city": detected_city,
             "language": current_lang,
             "matched_disease": last_user_text,
-            "nearby_distance": chosen_doc.get("distance", "1.2 km away"),
-            "why_best": chosen_doc.get("why_best", [])[:2]
+            "nearby_distance": chosen_doc.get("distance", "1 km away")
         }, current_lang)
 
-        slots = get_slots(chosen_doc["id"])
         execute_tool_call("get_slots", {"doctor_id": chosen_doc["id"]}, current_lang)
 
-        spoken_recommendations = {
-            "hi": f"{detected_city} mein {chosen_doc.get('distance', 'paas mein')} {chosen_doc['name']} ({chosen_doc.get('degrees', '')}) uplabdh hain. Inhe {chosen_doc.get('rating', 4.9)} star rating mili hai. Kal subah 11:30 baje ka slot khali hai. Kya main book kar doon?",
-            "kn": f"{detected_city} ನಲ್ಲಿ {chosen_doc.get('distance', 'ಹತ್ತಿರದಲ್ಲಿ')} {chosen_doc['name']} ({chosen_doc.get('rating', 4.9)}★) ಲಭ್ಯವಿದ್ದಾರೆ. ನಾಳೆ ಬೆಳಗ್ಗೆ 11:30 ರ ಸ್ಲಾಟ್ ಖಾಲಿ ಇದೆ. ಬುಕ್ ಮಾಡಲೇ?",
-            "te": f"{detected_city} లో {chosen_doc.get('distance', 'దగ్గరలో')} {chosen_doc['name']} ({chosen_doc.get('rating', 4.95)}★) అందుబాటులో ఉన్నారు. రేపు ఉదయం 11:30 కి స్లాట్ ఉంది. బుక్ చేయమంటారా?",
-            "en": f"In {detected_city}, just {chosen_doc.get('distance', 'nearby')} at {chosen_doc['hospital']}, {chosen_doc['name']} ({chosen_doc.get('rating', 4.9)}★) is available. Tomorrow at 11:30 AM has an open slot. Shall I confirm this booking?"
-        }
+        # Multi-doctor spoken recommendation in native phonetic code-mixed format (no broken Kannada TTS)
+        dist1 = chosen_doc.get('distance_km', 1.0)
+        dist2 = second_doc.get('distance_km', 2.0) if second_doc else None
+
+        if second_doc:
+            spoken_recommendations = {
+                "hi": f"{detected_city} mein {dist1} kilometer door {chosen_doc['name']} ({chosen_doc.get('degrees', '')}) aur {dist2} kilometer par {second_doc['name']} available hain. {chosen_doc['name']} ka kal subah 11:30 AM ka slot khali hai. Kya main confirm kar doon?",
+                "kn": f"{detected_city} alli {dist1} kilometer distance alli {chosen_doc['name']} mathu {dist2} kilometer alli {second_doc['name']} available iddaare. {chosen_doc['name']} avara slot naale 11:30 AM ge ide. Book maadla?",
+                "te": f"{detected_city} lo {dist1} kilometers distance lo {chosen_doc['name']} mariyu {dist2} kilometers lo {second_doc['name']} available unnaru. {chosen_doc['name']} gari slot repu 11:30 AM ki undi. Confirm cheyamantira?",
+                "en": f"In {detected_city}, {chosen_doc['name']} is available {dist1} kilometers away, and {second_doc['name']} is {dist2} kilometers away. {chosen_doc['name']} has an open slot tomorrow at 11:30 AM. Shall I confirm this booking?"
+            }
+        else:
+            spoken_recommendations = {
+                "hi": f"{detected_city} mein {dist1} kilometer door {chosen_doc['name']} available hain. Kal subah 11:30 AM ka slot khali hai. Kya main book kar doon?",
+                "kn": f"{detected_city} alli {dist1} kilometer dooradalli {chosen_doc['name']} available iddaare. Naale 11:30 AM slot ide. Book maadla?",
+                "te": f"{detected_city} lo {dist1} kilometers distance lo {chosen_doc['name']} available unnaru. Repu 11:30 AM ki slot undi. Book cheyamantira?",
+                "en": f"In {detected_city}, {chosen_doc['name']} is available {dist1} kilometers away with an open slot tomorrow at 11:30 AM. Shall I book this for you?"
+            }
 
         return {
             "spoken_text": spoken_recommendations.get(current_lang, spoken_recommendations["en"]),
@@ -264,7 +281,8 @@ class MultilingualAgentEngine:
             ],
             "speciality": detected_speciality,
             "emergency": False,
-            "suggested_doctor": chosen_doc
+            "suggested_doctor": chosen_doc,
+            "suggested_doctors": top_docs
         }
 
     def process_conversation(self, messages: List[Dict[str, str]], current_lang: str = "hi",

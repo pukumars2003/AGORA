@@ -247,7 +247,12 @@ class VoiceInteractionRequest(BaseModel):
 def voice_interact(req: VoiceInteractionRequest):
     messages = req.history.copy() if req.history else []
     messages.append({"role": "user", "content": req.message})
-    result = agent_engine.process_conversation(messages, current_lang=req.language or "hi")
+    result = agent_engine.process_conversation(
+        messages, 
+        current_lang=req.language or "hi",
+        patient_lat=req.patient_lat,
+        patient_lng=req.patient_lng
+    )
     return {
         "status": "success",
         "spoken_text": result["spoken_text"],
@@ -255,7 +260,8 @@ def voice_interact(req: VoiceInteractionRequest):
         "speciality": result["speciality"],
         "emergency": result["emergency"],
         "appointment": result.get("appointment"),
-        "suggested_doctor": result.get("suggested_doctor")
+        "suggested_doctor": result.get("suggested_doctor"),
+        "suggested_doctors": result.get("suggested_doctors")
     }
 
 # --- Doctor Directory & Appointments ---
