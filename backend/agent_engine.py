@@ -256,22 +256,14 @@ class MultilingualAgentEngine:
 
         # Multi-doctor spoken recommendation in native phonetic code-mixed format (no broken Kannada TTS)
         dist1 = chosen_doc.get('distance_km', 1.0)
-        dist2 = second_doc.get('distance_km', 2.0) if second_doc else None
+        hosp = chosen_doc.get('hospital', 'Clinic')
 
-        if second_doc:
-            spoken_recommendations = {
-                "hi": f"{detected_city} mein {dist1} kilometer door {chosen_doc['name']} ({chosen_doc.get('degrees', '')}) aur {dist2} kilometer par {second_doc['name']} available hain. {chosen_doc['name']} ka kal subah 11:30 AM ka slot khali hai. Kya main confirm kar doon?",
-                "kn": f"{detected_city} alli {dist1} kilometer distance alli {chosen_doc['name']} mathu {dist2} kilometer alli {second_doc['name']} available iddaare. {chosen_doc['name']} avara slot naale 11:30 AM ge ide. Book maadla?",
-                "te": f"{detected_city} lo {dist1} kilometers distance lo {chosen_doc['name']} mariyu {dist2} kilometers lo {second_doc['name']} available unnaru. {chosen_doc['name']} gari slot repu 11:30 AM ki undi. Confirm cheyamantira?",
-                "en": f"In {detected_city}, {chosen_doc['name']} is available {dist1} kilometers away, and {second_doc['name']} is {dist2} kilometers away. {chosen_doc['name']} has an open slot tomorrow at 11:30 AM. Shall I confirm this booking?"
-            }
-        else:
-            spoken_recommendations = {
-                "hi": f"{detected_city} mein {dist1} kilometer door {chosen_doc['name']} available hain. Kal subah 11:30 AM ka slot khali hai. Kya main book kar doon?",
-                "kn": f"{detected_city} alli {dist1} kilometer dooradalli {chosen_doc['name']} available iddaare. Naale 11:30 AM slot ide. Book maadla?",
-                "te": f"{detected_city} lo {dist1} kilometers distance lo {chosen_doc['name']} available unnaru. Repu 11:30 AM ki slot undi. Book cheyamantira?",
-                "en": f"In {detected_city}, {chosen_doc['name']} is available {dist1} kilometers away with an open slot tomorrow at 11:30 AM. Shall I book this for you?"
-            }
+        spoken_recommendations = {
+            "hi": f"Maine aapke liye screen par top nearby doctors dikha diye hain. Main aapko {chosen_doc['name']} ({chosen_doc.get('degrees', '')}) recommend karta hoon jo sirf {dist1} kilometer door {hosp} me hain. Inka kal subah 11:30 AM ka slot khali hai. Kya main confirm kar doon?",
+            "kn": f"Naanu nimage screen mele top nearby doctors list kottiddini. Naanu nimage {chosen_doc['name']} na recommend maadthene, avaru {hosp} alli {dist1} kilometer distance alli iddaare. Naale 11:30 AM slot ide. Book maadla?",
+            "te": f"Nenu mee kosam screen meeda top nearby doctors ni chupinchanu. Nenu meeku {chosen_doc['name']} ni recommend chesthunnanu, {hosp} lo {dist1} kilometers distance lo unnaru. Repu 11:30 AM ki slot undi. Confirm cheyamantira?",
+            "en": f"I have listed the top nearby specialists on your screen. I recommend {chosen_doc['name']} ({chosen_doc.get('degrees', '')}) at {hosp}, located just {dist1} kilometers away. An open slot is available tomorrow at 11:30 AM. Shall I confirm this booking for you?"
+        }
 
         return {
             "spoken_text": spoken_recommendations.get(current_lang, spoken_recommendations["en"]),

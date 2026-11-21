@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import LoginScreen from './components/LoginScreen';
 import LanguageSelectScreen from './components/LanguageSelectScreen';
 import DoctorDashboard from './components/DoctorDashboard';
@@ -13,7 +13,7 @@ import FeedbackModal from './components/FeedbackModal';
 import { voiceManager, LANGUAGE_CONFIG } from './services/voiceService';
 import { 
   Mic, Volume2, Sparkles, Loader2, Send, 
-  CheckCircle, ArrowRight, Camera, Navigation, Star, MapPin
+  CheckCircle, ArrowRight, Camera, Navigation, Star, MapPin, PhoneCall, X
 } from 'lucide-react';
 
 export default function App() {
@@ -27,6 +27,10 @@ export default function App() {
   const [suggestedDoctors, setSuggestedDoctors] = useState([]);
   const [emergencyAlert, setEmergencyAlert] = useState(null);
   const [hasGreeted, setHasGreeted] = useState(false);
+  const [agoraOutboundCall, setAgoraOutboundCall] = useState(null); // 15-second Agora test trigger
+  
+  const isSubmittingRef = useRef(false);
+  const agoraTimerRef = useRef(null);
   
   // What the assistant did step tracker (from Screen 7)
   const [assistantSteps, setAssistantSteps] = useState([]);
@@ -107,10 +111,16 @@ export default function App() {
     greetUser();
   }, [currentUser, currentLang, hasGreeted]);
 
-  // Handle voice or text message processing
+  // Handle voice or text message processing with anti-loop echo protection
   const handleVoiceSubmit = async (text) => {
-    if (!text.trim()) return;
+    if (!text || !text.trim()) return;
+    if (isSubmittingRef.current || voiceState === 'SPEAKING') return;
 
+    // Reject self-echoes where mic picks up the exact assistant reply
+    if (assistantReply && text.trim().toLowerCase() === assistantReply.trim().toLowerCase()) return;
+
+    isSubmittingRef.current = true;
+    voiceManager.stopListening();
     setSpokenText(text);
     setVoiceState('THINKING');
 
@@ -164,6 +174,31 @@ export default function App() {
           { name: 'sms_confirmation', label: 'SMS confirmation', status: 'sent' },
           { name: 'reminder_set', label: 'Reminder scheduled', status: 'set' }
         ]);
+
+        // Start 15-second Agora RTC Outbound Reminder test timer!
+        if (agoraTimerRef.current) clearTimeout(agoraTimerRef.current);
+        agoraTimerRef.current = setTimeout(() => {
+          const docName = data.appointment.doctor_name || 'the doctor';
+          const slotTime = data.appointment.slot || '11:30 AM';
+          const patientName = currentUser?.name || 'Ravi Kumar';
+          
+          const outboundPrompt = currentLang === 'hi'
+            ? `Namaste ${patientName}! Yeh Swasthya Sahayak ka Agora Outbound Reminder call hai. Kal subah ${slotTime} baje ${docName} ke sath aapka consultation confirm hai. Clinic route ready hai.`
+            : currentLang === 'kn'
+            ? `Namaskara ${patientName}! Idu Swasthya Sahayak Agora Outbound Reminder call. Naale belagge ${slotTime} ge ${docName} jothe nimma consultation confirm aagide.`
+            : currentLang === 'te'
+            ? `Namaskaram ${patientName}! Idi Swasthya Sahayak Agora Outbound Reminder call. Repu ${slotTime} ki ${docName} garitho mee consultation confirm ayindi.`
+            : `Hello ${patientName}! This is Alex Morgan with your live Agora outbound appointment reminder. Your consultation is confirmed for tomorrow at ${slotTime} with ${docName}.`;
+          
+          setAgoraOutboundCall({
+            doctor: docName,
+            slot: slotTime,
+            patient: patientName,
+            message: outboundPrompt
+          });
+
+          voiceManager.speak(outboundPrompt, currentLang);
+        }, 15000);
       }
 
       setVoiceState('SPEAKING');
@@ -171,11 +206,17 @@ export default function App() {
         data.spoken_text,
         currentLang,
         () => setVoiceState('SPEAKING'),
-        () => setVoiceState('IDLE')
+        () => {
+          setVoiceState('IDLE');
+          setTimeout(() => {
+            isSubmittingRef.current = false;
+          }, 800);
+        }
       );
     } catch (err) {
       console.error('Submit error:', err);
       setVoiceState('IDLE');
+      isSubmittingRef.current = false;
     }
   };
 
@@ -303,6 +344,53 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* 15-Second Agora RTC Outbound Reminder Active Banner */}
+        {agoraOutboundCall && (
+          <div className="bg-gradient-to-r from-emerald-600 via-teal-700 to-emerald-800 text-white rounded-3xl p-5 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/30 animate-pulse">
+                <PhoneCall className="w-6 h-6 text-emerald-100" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono font-bold bg-white/20 px-2 py-0.5 rounded uppercase tracking-wider">
+                    Agora RTC Outbound Reminder (15s Simulation Triggered)
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
+                </div>
+                <h3 className="font-extrabold text-base mt-0.5">
+                  Live Outbound Voice Call: {agoraOutboundCall.doctor}
+                </h3>
+                <p className="text-xs text-emerald-100 mt-0.5 max-w-xl">
+                  "{agoraOutboundCall.message}"
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  voiceManager.speak("Thank you for confirming your attendance! See you tomorrow at the clinic.", currentLang);
+                  setAgoraOutboundCall(null);
+                }}
+                className="px-4 py-2 bg-white text-emerald-800 font-extrabold text-xs rounded-xl shadow-xs hover:bg-emerald-50 transition"
+              >
+                Press 1: Confirm Attendance
+              </button>
+              <button
+                onClick={() => {
+                  voiceManager.stopSpeaking();
+                  setAgoraOutboundCall(null);
+                }}
+                className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition"
+                title="Dismiss Call"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Voice Interaction Layout: 2 Columns */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
